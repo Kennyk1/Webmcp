@@ -155,7 +155,7 @@ function listTool(name, description) {
 function registerWebMcpTools() {
   const statusPill = document.getElementById("webmcp-status");
 
-  if (!("modelContext" in window.navigator)) {
+  if (!("modelContext" in document)) {
     statusPill.textContent = "WebMCP not detected in this browser";
     statusPill.classList.add("unsupported");
     return;
@@ -163,7 +163,7 @@ function registerWebMcpTools() {
 
   statusPill.textContent = "WebMCP tools registered";
 
-  navigator.modelContext.registerTool({
+  document.modelContext.registerTool({
     name: "get_overdue_tasks",
     description: "List all tasks that are past their due date and not marked done.",
     inputSchema: { type: "object", properties: {} },
@@ -174,7 +174,7 @@ function registerWebMcpTools() {
   });
   listTool("get_overdue_tasks", "returns overdue, non-done tasks");
 
-  navigator.modelContext.registerTool({
+  document.modelContext.registerTool({
     name: "get_task_activity",
     description: "Get the activity log for a specific task by id, to check for completion signals.",
     inputSchema: {
@@ -189,7 +189,7 @@ function registerWebMcpTools() {
   });
   listTool("get_task_activity", "returns the log for one task");
 
-  navigator.modelContext.registerTool({
+  document.modelContext.registerTool({
     name: "suggest_completions",
     description: "Scan overdue tasks for activity-log signals that suggest the task is actually complete, and return candidates with a reason for each.",
     inputSchema: { type: "object", properties: {} },
@@ -200,7 +200,7 @@ function registerWebMcpTools() {
   });
   listTool("suggest_completions", "reasons over activity logs, never writes");
 
-  navigator.modelContext.registerTool({
+  document.modelContext.registerTool({
     name: "bulk_update_status",
     description: "Update the status of one or more tasks. Requires confirmed=true, which must only be set after the user has explicitly approved the change in conversation. Calls without confirmed=true are rejected.",
     inputSchema: {
@@ -228,7 +228,7 @@ function registerWebMcpTools() {
   });
   listTool("bulk_update_status", "the only write tool; rejects unconfirmed calls");
 
-  navigator.modelContext.registerTool({
+  document.modelContext.registerTool({
     name: "search_tasks",
     description: "Search tasks by free-text query, status, or tag.",
     inputSchema: {
@@ -250,7 +250,7 @@ function registerWebMcpTools() {
   });
   listTool("search_tasks", "structured filter, no scraping needed");
 
-  navigator.modelContext.registerTool({
+  document.modelContext.registerTool({
     name: "add_task",
     description: "Create a new task.",
     inputSchema: {
