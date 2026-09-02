@@ -1,0 +1,12 @@
+{
+  "name": "agent-task-board",
+  "version": "1.0.0",
+  "description": "Agent-native task board with a WebMCP interface for AI agents",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
