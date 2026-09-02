@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Signal — Agent-Native Task Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark"></span>
+      <span class="brand-name">Signal</span>
+    </div>
+    <div class="topbar-meta">
+      <span id="summary-overdue" class="pill pill-overdue">0 overdue</span>
+      <button id="webmcp-status" class="pill pill-webmcp">Checking WebMCP…</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="board">
+      <div class="column" data-status="todo">
+        <div class="column-head">
+          <h2>To do</h2>
+          <span class="count" id="count-todo">0</span>
+        </div>
+        <div class="column-body" id="col-todo"></div>
+      </div>
+      <div class="column" data-status="doing">
+        <div class="column-head">
+          <h2>In progress</h2>
+          <span class="count" id="count-doing">0</span>
+        </div>
+        <div class="column-body" id="col-doing"></div>
+      </div>
+      <div class="column" data-status="done">
+        <div class="column-head">
+          <h2>Done</h2>
+          <span class="count" id="count-done">0</span>
+        </div>
+        <div class="column-body" id="col-done"></div>
+      </div>
+    </section>
+
+    <aside class="agent-panel">
+      <div class="agent-panel-head">
+        <h2>Agent</h2>
+        <p>Tools exposed through WebMCP. Reads run freely; writes wait for you.</p>
+      </div>
+      <div class="agent-thread" id="agent-thread"></div>
+      <div class="tool-list">
+        <h3>Registered tools</h3>
+        <ul id="tool-list"></ul>
+      </div>
+    </aside>
+  </main>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
