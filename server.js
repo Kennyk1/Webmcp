@@ -110,9 +110,6 @@ let tasks = [
   }
 ];
 
-// --- Tool Forge: agent-proposed tools, composed only from whitelisted
-// read primitives. No arbitrary code ever reaches the server or the
-// client's registerTool() call — steps are interpreted, never eval'd.
 const ALLOWED_PRIMITIVES = ["get_overdue_tasks", "search_tasks"];
 const ALLOWED_FILTER_OPS = ["equals", "includes"];
 
@@ -137,8 +134,6 @@ function isValidSteps(steps) {
   });
 }
 
-// --- Project file store: a small in-memory scratch workspace an agent
-// can write generated files to (e.g. a tool implementation, notes, code).
 let projectFiles = {};
 
 function isOverdue(task) {
@@ -284,15 +279,10 @@ app.patch("/api/tool-proposals/:id", (req, res) => {
   if (!["approved", "rejected"].includes(status)) {
     return res.status(400).json({ error: "invalid_status" });
   }
-  // This endpoint only records the human decision. The actual
-  // document.modelContext.registerTool() call happens client-side,
-  // triggered by the approval button's UI state change - not by the
-  // agent calling a tool. Tools don't register other tools here.
   proposal.status = status;
   proposal.decidedAt = new Date().toISOString();
   res.json(proposal);
 });
-
 
 app.get("/api/files", (req, res) => {
   const list = Object.entries(projectFiles).map(([filePath, f]) => ({
@@ -321,6 +311,30 @@ app.put("/api/files", (req, res) => {
   }
   projectFiles[filePath] = { content, updatedAt: new Date().toISOString() };
   res.status(201).json({ path: filePath, updatedAt: projectFiles[filePath].updatedAt });
+});
+
+app.post("/api/files/edit", (req, res) => {
+  const { path: filePath, old_str, new_str } = req.body || {};
+  if (!filePath || typeof old_str !== "string" || typeof new_str !== "string") {
+    return res.status(400).json({ error: "path, old_str, and new_str are required" });
+  }
+  const file = projectFiles[filePath];
+  if (!file) return res.status(404).json({ error: "not_found" });
+  const occurrences = file.content.split(old_str).length - 1;
+  if (occurrences !== 1) {
+    return res.status(409).json({
+      error: "match_count_invalid",
+      message: `old_str matched ${occurrences} time(s); it must match exactly once. Add more surrounding context to make it unique.`,
+      occurrences
+    });
+  }
+  const updated = file.content.replace(old_str, new_str);
+  if (updated.length > 20000) {
+    return res.status(413).json({ error: "file_too_large" });
+  }
+  file.content = updated;
+  file.updatedAt = new Date().toISOString();
+  res.json({ path: filePath, updatedAt: file.updatedAt });
 });
 
 const PORT = process.env.PORT || 3000;
