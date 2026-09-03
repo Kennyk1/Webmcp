@@ -1,8 +1,5 @@
 const state = { tasks: [], proposals: [], files: [] };
 
-// Primitives an agent-proposed tool is allowed to compose. Mirrors the
-// server's whitelist - the interpreter below never eval()s agent input,
-// it only walks this fixed set of steps.
 const PRIMITIVE_CALLS = {
   get_overdue_tasks: async () => {
     const res = await fetch("/api/tasks/overdue");
@@ -230,12 +227,6 @@ function appendAgentMessage({ text, variant, onApprove }) {
   return message;
 }
 
-// Registering a tool here happens ONLY from this function, and this
-// function is only ever called from a user's own Approve click - never
-// from inside another tool's execute(). That keeps registration a
-// function of UI state (a human decision rendered on screen), which is
-// the pattern the WebMCP spec discussion recommends over tools directly
-// registering other tools.
 async function approveProposal(proposal) {
   await fetch(`/api/tool-proposals/${proposal.id}`, {
     method: "PATCH",
@@ -433,7 +424,6 @@ function registerWebMcpTools() {
   });
   listTool("add_task", "creates a task");
 
-  // --- Tool Forge ---
 
   document.modelContext.registerTool({
     name: "propose_tool",
@@ -490,7 +480,7 @@ function registerWebMcpTools() {
   });
   listTool("list_tool_proposals", "read-only, checks proposal status");
 
-  // --- Project file store ---
+  // Project file store
 
   document.modelContext.registerTool({
     name: "write_project_file",
