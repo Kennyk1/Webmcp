@@ -337,6 +337,210 @@ app.post("/api/files/edit", (req, res) => {
   res.json({ path: filePath, updatedAt: file.updatedAt });
 });
 
+const TOOL_EXECUTORS = {
+  get_overdue_tasks: async () => tasks.filter(isOverdue),
+  get_task_activity: async ({ taskId }) => {
+    const task = tasks.find((t) => t.id === taskId);
+    return task ? task.activityLog : { error: "not_found" };
+  },
+  suggest_completions: async () => {
+    const overdue = tasks.filter(isOverdue);
+    const candidates = overdue
+      .map((task) => {
+        const signal = findCompletionSignal(task);
+        return signal ? { id: task.id, title: task.title, reason: signal } : null;
+      })
+      .filter(Boolean);
+    return { overdueCount: overdue.length, candidates };
+  },
+  search_tasks: async ({ query, status, tag }) => {
+    let results = tasks;
+    if (status) results = results.filter((t) => t.status === status);
+    if (tag) results = results.filter((t) => t.tag === tag);
+    if (query) results = results.filter((t) => t.title.toLowerCase().includes(String(query).toLowerCase()));
+    return results;
+  },
+  add_task: async ({ title, tag, dueDate }) => {
+    const task = {
+      id: crypto.randomUUID(),
+      title,
+      status: "todo",
+      tag: tag || "general",
+      dueDate: dueDate || daysFromNow(7),
+      activityLog: []
+    };
+    tasks.unshift(task);
+    return task;
+  },
+  bulk_update_status: async ({ taskIds, status, confirmed }) => {
+    if (confirmed !== true) {
+      return {
+        error: "confirmation_required",
+        message: "Ask the user for explicit approval in this conversation first, then call again with confirmed:true."
+      };
+    }
+    const updated = [];
+    (taskIds || []).forEach((id) => {
+      const task = tasks.find((t) => t.id === id);
+      if (task) {
+        task.status = status;
+        task.activityLog.push({
+          timestamp: new Date().toISOString(),
+          note: `Marked ${status} via agent, user-confirmed`
+        });
+        updated.push(task);
+      }
+    });
+    return { updated };
+  }
+};
+
+const TOOL_DEFS = [
+  {
+    type: "function",
+    function: {
+      name: "get_overdue_tasks",
+      description: "List all tasks that are past their due date and not marked done.",
+      parameters: { type: "object", properties: {} }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_task_activity",
+      description: "Get the activity log for a specific task by id.",
+      parameters: {
+        type: "object",
+        properties: { taskId: { type: "string" } },
+        required: ["taskId"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "suggest_completions",
+      description: "Scan overdue tasks for activity-log signals suggesting the task is actually complete. Read-only.",
+      parameters: { type: "object", properties: {} }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "search_tasks",
+      description: "Search tasks by free-text query, status, or tag.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string" },
+          status: { type: "string", enum: ["todo", "doing", "done"] },
+          tag: { type: "string" }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "add_task",
+      description: "Create a new task.",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string" },
+          tag: { type: "string" },
+          dueDate: { type: "string", description: "YYYY-MM-DD" }
+        },
+        required: ["title"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "bulk_update_status",
+      description: "Update the status of one or more tasks. Requires confirmed=true, which must only be set after the user has explicitly approved the change earlier in this conversation.",
+      parameters: {
+        type: "object",
+        properties: {
+          taskIds: { type: "array", items: { type: "string" } },
+          status: { type: "string", enum: ["todo", "doing", "done"] },
+          confirmed: { type: "boolean" }
+        },
+        required: ["taskIds", "status", "confirmed"]
+      }
+    }
+  }
+];
+
+async function callRouter(messages) {
+  const url = process.env.AGENT_ROUTER_URL || "https://router.fiazzytech.live/gpt/v1/chat/completions";
+  const model = process.env.AGENT_ROUTER_MODEL || "gpt-5.6-sol";
+  const apiKey = process.env.AGENT_ROUTER_API_KEY;
+  if (!apiKey) throw new Error("AGENT_ROUTER_API_KEY is not set");
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model,
+      messages,
+      tools: TOOL_DEFS,
+      tool_choice: "auto",
+      max_tokens: 600
+    })
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`router ${res.status}: ${text}`);
+  }
+  return res.json();
+}
+
+app.post("/api/agent-chat", async (req, res) => {
+  const { history } = req.body || {};
+  if (!Array.isArray(history) || history.length === 0) {
+    return res.status(400).json({ error: "history is required" });
+  }
+
+  const systemPrompt = {
+    role: "system",
+    content:
+      "You are a task assistant with tool access to a task board. Reads are always fine. " +
+      "Never call bulk_update_status with confirmed:true unless the user has explicitly said yes to that exact change earlier in this conversation. " +
+      "If you haven't asked yet, ask first and stop."
+  };
+  const messages = [systemPrompt, ...history];
+  const toolLog = [];
+
+  try {
+    for (let turn = 0; turn < 5; turn++) {
+      const data = await callRouter(messages);
+      const choice = data.choices[0].message;
+      messages.push(choice);
+
+      if (!choice.tool_calls || choice.tool_calls.length === 0) {
+        return res.json({ reply: choice.content, toolLog });
+      }
+
+      for (const call of choice.tool_calls) {
+        const args = JSON.parse(call.function.arguments || "{}");
+        const executor = TOOL_EXECUTORS[call.function.name];
+        const result = executor ? await executor(args) : { error: "unknown_tool" };
+        toolLog.push({ name: call.function.name, args, result });
+        messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });
+      }
+    }
+    res.json({ reply: "Reached max tool-call turns without a final answer.", toolLog });
+  } catch (err) {
+    res.status(502).json({ error: "router_failed", message: String((err && err.message) || err) });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Agent task board running on port ${PORT}`);
