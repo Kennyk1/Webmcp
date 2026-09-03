@@ -53,7 +53,7 @@ a human clicks Approve:
 - `list_tool_proposals()` — read-only, lets an agent check what it
   proposed and whether it's pending, approved, or rejected.
 
-There's no code generation and no `eval`. A proposed tool can only be a
+There's no arbitrary code generation or (`eval`). A proposed tool can only be a
 composition of primitives the server already whitelists
 (`ALLOWED_PRIMITIVES` in `server.js`), so the worst a proposal can do is
 combine existing reads in a new way — it can't reach new data or perform
