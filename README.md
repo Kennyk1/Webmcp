@@ -94,7 +94,7 @@ run, shown in the UI under `/workspace/...`:
   than 22 hours between deciding to enter (Sep 2) and the deadline.
   Cipher itself isn't blocked on time or difficulty at this point — it's
   blocked on funding to keep building it properly. If this project
-  places, that's a real step toward getting Cipher there. If you're
+  places, that's a real step toward getting Cipher there. my biggest thanks will be actually acknowledging this project even tho I wasn't able to do what I wanted due to the time limited for me, would have built something a little bit More interesting like the GitHub design I planned adding and a lot more etc. If you're
   interested in backing it, reach out: favourdev12@gmail.com or
   [@favouedeve](https://t.me/favouedeve) on Telegram.
 
