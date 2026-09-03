@@ -3,26 +3,49 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Signal — Agent-Native Task Board</title>
+<title>Signal — Self-Extending Task Board</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-<div class="app">
+
+<div class="app-shell">
   <header class="topbar">
+    <button id="hamburger-btn" class="hamburger-btn" aria-label="Open menu">
+      <span></span><span></span><span></span>
+    </button>
     <div class="brand">
       <span class="brand-mark"></span>
-      <span class="brand-name">Signal</span>
+      <span class="brand-name">Signal <span class="brand-sub">— Self-Extending Task Board</span></span>
     </div>
-    <div class="topbar-meta">
-      <span id="summary-overdue" class="pill pill-overdue">0 overdue</span>
-      <button id="webmcp-status" class="pill pill-webmcp">Checking WebMCP…</button>
-    </div>
+    <span id="webmcp-status" class="pill pill-webmcp">Checking WebMCP…</span>
   </header>
 
-  <main class="layout">
-    <section class="board">
+  <main class="chat-main">
+    <div class="agent-thread" id="agent-thread"></div>
+    <form id="agent-chat-form" class="agent-chat-form">
+      <input id="agent-chat-input" type="text" placeholder="Ask the agent, e.g. check overdue tasks" autocomplete="off" />
+      <button type="submit">Send</button>
+    </form>
+  </main>
+</div>
+
+<div class="drawer-overlay" id="drawer-overlay"></div>
+<aside class="drawer" id="drawer">
+  <div class="drawer-head">
+    <span class="brand-name">Signal</span>
+    <button id="drawer-close" class="drawer-close" aria-label="Close menu">✕</button>
+  </div>
+
+  <div class="drawer-row">
+    <span id="model-pill" class="model-pill mono">checking model…</span>
+    <span id="summary-overdue" class="pill pill-overdue">0 overdue</span>
+  </div>
+
+  <div class="drawer-section">
+    <h3>Task board</h3>
+    <div class="board-mini">
       <div class="column" data-status="todo">
         <div class="column-head">
           <h2>To do</h2>
@@ -44,36 +67,42 @@
         </div>
         <div class="column-body" id="col-done"></div>
       </div>
-    </section>
+    </div>
+  </div>
 
-    <aside class="agent-panel">
-      <div class="agent-panel-head">
-        <h2>Agent</h2>
-        <p>Tools exposed through WebMCP. Reads run freely; writes wait for you.</p>
-      </div>
-      <div class="agent-thread" id="agent-thread"></div>
+  <div class="tool-list">
+    <h3>Registered tools</h3>
+    <ul id="tool-list"></ul>
+  </div>
 
-      <form id="agent-chat-form" class="agent-chat-form">
-        <input id="agent-chat-input" type="text" placeholder="Ask the agent, e.g. check overdue tasks" autocomplete="off" />
-        <button type="submit">Send</button>
-      </form>
+  <div class="tool-list">
+    <h3>Tool Forge — agent-proposed tools</h3>
+    <ul id="proposal-list"></ul>
+  </div>
 
-      <div class="tool-list">
-        <h3>Registered tools</h3>
-        <ul id="tool-list"></ul>
-      </div>
+  <div class="tool-list">
+    <h3>Project files</h3>
+    <ul id="file-list"></ul>
+  </div>
 
-      <div class="tool-list">
-        <h3>Tool Forge — agent-proposed tools</h3>
-        <ul id="proposal-list"></ul>
-      </div>
+  <div class="drawer-section drawer-footer">
+    <button id="reopen-onboarding" class="drawer-link-btn">How this works</button>
+    <a href="https://github.com/Kennyk1/Webmcp/blob/main/public/styles.css" target="_blank" rel="noopener" class="drawer-link">View source on GitHub</a>
+  </div>
+</aside>
 
-      <div class="tool-list">
-        <h3>Project files</h3>
-        <ul id="file-list"></ul>
-      </div>
-    </aside>
-  </main>
+<div class="modal-overlay" id="onboarding-modal">
+  <div class="modal-card">
+    <h2>Welcome to Signal</h2>
+    <p>A task board built for people and agents to run together. Everything here is a real, working WebMCP integration — not a simulation.</p>
+    <ul class="modal-list">
+      <li><strong>Chat with the agent</strong> in the main window — ask it to check overdue tasks, search, or update things.</li>
+      <li><strong>Reads run freely.</strong> Anything that changes data — marking tasks done, writing a file — waits for your explicit approval first.</li>
+      <li><strong>Tool Forge</strong> lets the agent propose brand-new tools composed from existing ones. They only go live once you approve them.</li>
+      <li>Open the <strong>☰ menu</strong> anytime to see the task board, every registered tool, proposed tools, and project files.</li>
+    </ul>
+    <button id="onboarding-close" class="approve-yes">Got it</button>
+  </div>
 </div>
 
 <script src="app.js"></script>

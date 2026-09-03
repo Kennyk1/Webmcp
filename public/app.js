@@ -801,4 +801,45 @@ document.addEventListener("DOMContentLoaded", async () => {
     input.value = "";
     sendChatMessage(text);
   });
+
+  const drawer = document.getElementById("drawer");
+  const overlay = document.getElementById("drawer-overlay");
+  const openDrawer = () => {
+    drawer.classList.add("open");
+    overlay.classList.add("visible");
+  };
+  const closeDrawer = () => {
+    drawer.classList.remove("open");
+    overlay.classList.remove("visible");
+  };
+  document.getElementById("hamburger-btn").addEventListener("click", openDrawer);
+  document.getElementById("drawer-close").addEventListener("click", closeDrawer);
+  overlay.addEventListener("click", closeDrawer);
+
+  const onboardingModal = document.getElementById("onboarding-modal");
+  const showOnboarding = () => onboardingModal.classList.add("visible");
+  const hideOnboarding = () => {
+    onboardingModal.classList.remove("visible");
+    try {
+      localStorage.setItem("signal-onboarded", "1");
+    } catch (e) {}
+  };
+  document.getElementById("onboarding-close").addEventListener("click", hideOnboarding);
+  document.getElementById("reopen-onboarding").addEventListener("click", () => {
+    closeDrawer();
+    showOnboarding();
+  });
+  let alreadyOnboarded = false;
+  try {
+    alreadyOnboarded = localStorage.getItem("signal-onboarded") === "1";
+  } catch (e) {}
+  if (!alreadyOnboarded) showOnboarding();
+
+  try {
+    const modelRes = await fetch("/api/model-info");
+    const modelBody = await modelRes.json();
+    document.getElementById("model-pill").textContent = `${modelBody.model} · ${modelBody.provider}`;
+  } catch (e) {
+    document.getElementById("model-pill").textContent = "model unavailable";
+  }
 });
