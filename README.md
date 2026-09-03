@@ -68,16 +68,45 @@ directly.
 
 ## Project files — a scratch workspace for the agent
 
-A small in-memory file store the agent can read and write, shown in the
-UI under `/workspace/...`:
+A small in-memory file store the agent can read, write, patch, and even
+run, shown in the UI under `/workspace/...`:
 
-- `write_project_file(path, content)`
+- `write_project_file(path, content)` — full overwrite (create or replace)
+- `edit_project_file(path, old_str, new_str)` — a patch, not a rewrite.
+  `old_str` must match the file's current content in exactly one place;
+  the server rejects the edit with a clear error if it matches zero or
+  multiple times, instead of guessing which occurrence you meant.
 - `read_project_file(path)`
 - `list_project_files()`
+- `run_code(path)` — runs a file's JavaScript in an isolated, hidden
+  `<iframe>` (`sandbox="allow-scripts"`, no `allow-same-origin`) with a
+  `connect-src 'none'` CSP blocking all network access, plus a hard 3s
+  timeout. Captures `console.log`/`console.error` output and shows it in
+  the Agent panel, entirely in the browser — nothing runs on the server.
+
+  This is JS-only for now. It's a small piece of supporting infrastructure
+  inside a separate project I'm building called **Cipher** — an AI agent
+  that's been in active development for about two months. This sandbox
+  isn't the part that makes Cipher different; Cipher's actual core
+  features are separate from anything shown here, and I'm not detailing
+  them in this repo. What's here is just enough of the plumbing to demo a
+  working, approval-gated code runner for this hackathon, built in less
+  than 22 hours between deciding to enter (Sep 2) and the deadline.
+  Cipher itself isn't blocked on time or difficulty at this point — it's
+  blocked on funding to keep building it properly. If this project
+  places, that's a real step toward getting Cipher there. If you're
+  interested in backing it, reach out: favourdev12@gmail.com or
+  [@favouedeve](https://t.me/favouedeve) on Telegram.
+
+There's also a manual **Run** button in the Project files panel, so
+anyone testing the page without an agent in front of them can see the
+sandbox work the same way the "Run agent demo" button lets them see the
+approval flow work.
 
 Useful as a place for an agent to leave an artifact behind — notes, a
-generated script, a draft file — that persists across the conversation
-and is visible to the user in the same page, not buried in chat history.
+generated script, a draft file — that persists across the conversation,
+can be iterated on with small patches instead of full rewrites, and is
+visible and testable in the same page, not buried in chat history.
 
 ## Run locally
 
