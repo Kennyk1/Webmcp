@@ -598,13 +598,18 @@ const TOOL_DEFS = [
   }
 ];
 
-async function callProvider(url, model, apiKey, messages, extraHeaders) {
-  const res = await fetch(url, {
+async function callRouter(messages) {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) throw new Error("OPENROUTER_API_KEY is not set.");
+  const model = process.env.OPENROUTER_MODEL || "nvidia/nemotron-3-ultra-550b-a55b:free";
+
+  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
-      ...(extraHeaders || {})
+      "HTTP-Referer": "https://webmcp-wdd8.onrender.com",
+      "X-Title": "Signal Task Board"
     },
     body: JSON.stringify({
       model,
@@ -614,38 +619,12 @@ async function callProvider(url, model, apiKey, messages, extraHeaders) {
       max_tokens: 600
     })
   });
+
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`${url} responded ${res.status}: ${text}`);
+    throw new Error(`OpenRouter responded ${res.status}: ${text}`);
   }
   return res.json();
-}
-
-async function callRouter(messages) {
-  const primaryUrl = process.env.AGENT_ROUTER_URL || "https://router.fiazzytech.live/gpt/v1/chat/completions";
-  const primaryModel = process.env.AGENT_ROUTER_MODEL || "gpt-5.6-sol";
-  const primaryKey = process.env.AGENT_ROUTER_API_KEY;
-
-  if (primaryKey) {
-    try {
-      return await callProvider(primaryUrl, primaryModel, primaryKey, messages);
-    } catch (primaryErr) {
-      console.error("Primary router failed, falling back to OpenRouter:", primaryErr.message);
-    }
-  }
-
-  const fallbackKey = process.env.OPENROUTER_API_KEY;
-  if (!fallbackKey) {
-    throw new Error("Primary router failed and OPENROUTER_API_KEY is not set for fallback.");
-  }
-  const fallbackModel = process.env.OPENROUTER_MODEL || "nvidia/nemotron-3-ultra-550b-a55b:free";
-  return callProvider(
-    "https://openrouter.ai/api/v1/chat/completions",
-    fallbackModel,
-    fallbackKey,
-    messages,
-    { "HTTP-Referer": "https://webmcp-wdd8.onrender.com", "X-Title": "Signal Task Board" }
-  );
 }
 
 app.post("/api/agent-chat", async (req, res) => {
@@ -686,6 +665,7 @@ app.post("/api/agent-chat", async (req, res) => {
     }
     res.json({ reply: "Reached max tool-call turns without a final answer.", toolLog });
   } catch (err) {
+    console.error("agent-chat failed:", err.message);
     res.status(502).json({ error: "router_failed", message: String((err && err.message) || err) });
   }
 });
