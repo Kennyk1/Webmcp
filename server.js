@@ -245,16 +245,12 @@ app.get("/api/tasks/search", (req, res) => {
   res.json(results);
 });
 
-app.post("/api/tool-proposals", (req, res) => {
-  const { name, description, steps } = req.body || {};
+function createToolProposal({ name, description, steps }) {
   if (!name || !description || !isValidSteps(steps)) {
-    return res.status(400).json({
-      error: "invalid_proposal",
-      message: "name, description, and steps (composed only from allowed primitives) are required."
-    });
+    return { ok: false, status: 400, body: { error: "invalid_proposal", message: "name, description, and steps (composed only from allowed primitives) are required." } };
   }
   if (!/^[a-z][a-z0-9_]{2,40}$/.test(name)) {
-    return res.status(400).json({ error: "invalid_name", message: "Tool names must be lowercase snake_case." });
+    return { ok: false, status: 400, body: { error: "invalid_name", message: "Tool names must be lowercase snake_case." } };
   }
   const proposal = {
     id: crypto.randomUUID(),
@@ -265,7 +261,12 @@ app.post("/api/tool-proposals", (req, res) => {
     createdAt: new Date().toISOString()
   };
   toolProposals.unshift(proposal);
-  res.status(201).json(proposal);
+  return { ok: true, status: 201, body: proposal };
+}
+
+app.post("/api/tool-proposals", (req, res) => {
+  const result = createToolProposal(req.body || {});
+  res.status(result.status).json(result.body);
 });
 
 app.get("/api/tool-proposals", (req, res) => {
@@ -392,6 +393,44 @@ const TOOL_EXECUTORS = {
       }
     });
     return { updated };
+  },
+  list_own_tools: async () => TOOL_DEFS.map((t) => ({ name: t.function.name, description: t.function.description })),
+  list_project_files: async () =>
+    Object.entries(projectFiles).map(([filePath, f]) => ({ path: filePath, updatedAt: f.updatedAt, size: f.content.length })),
+  read_project_file: async ({ path }) => {
+    const file = projectFiles[path];
+    return file ? { path, content: file.content } : { error: "not_found" };
+  },
+  write_project_file: async ({ path, content, confirmed }) => {
+    if (confirmed !== true) {
+      return {
+        error: "confirmation_required",
+        message: "Ask the user for explicit approval before writing a new file, then call again with confirmed:true."
+      };
+    }
+    if (typeof content !== "string" || content.length > 20000) {
+      return { error: "invalid_content" };
+    }
+    projectFiles[path] = { content, updatedAt: new Date().toISOString() };
+    return { path, updatedAt: projectFiles[path].updatedAt };
+  },
+  edit_project_file: async ({ path, old_str, new_str }) => {
+    const file = projectFiles[path];
+    if (!file) return { error: "not_found" };
+    const occurrences = file.content.split(old_str).length - 1;
+    if (occurrences !== 1) {
+      return { error: "match_count_invalid", occurrences, message: "old_str must match exactly once. Add more context to make it unique." };
+    }
+    const updated = file.content.replace(old_str, new_str);
+    if (updated.length > 20000) return { error: "file_too_large" };
+    file.content = updated;
+    file.updatedAt = new Date().toISOString();
+    return { path, updatedAt: file.updatedAt };
+  },
+  list_tool_proposals: async () => toolProposals,
+  propose_tool: async ({ name, description, steps }) => {
+    const result = createToolProposal({ name, description, steps });
+    return result.body;
   }
 };
 
@@ -470,40 +509,143 @@ const TOOL_DEFS = [
         required: ["taskIds", "status", "confirmed"]
       }
     }
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_own_tools",
+      description: "List every tool you currently have access to, with descriptions. Call this if you're unsure what tools exist rather than guessing a tool name.",
+      parameters: { type: "object", properties: {} }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_project_files",
+      description: "List files currently in the shared project workspace.",
+      parameters: { type: "object", properties: {} }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "read_project_file",
+      description: "Read a file's contents from the shared project workspace.",
+      parameters: {
+        type: "object",
+        properties: { path: { type: "string" } },
+        required: ["path"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "write_project_file",
+      description: "Write or overwrite a file in the shared project workspace. Requires confirmed=true, which must only be set after the user has explicitly approved creating/overwriting this file earlier in this conversation.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string" },
+          content: { type: "string" },
+          confirmed: { type: "boolean" }
+        },
+        required: ["path", "content", "confirmed"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "edit_project_file",
+      description: "Edit part of an existing project file by exact string replacement, without rewriting the whole file. old_str must match the file's content in exactly one place.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string" },
+          old_str: { type: "string" },
+          new_str: { type: "string" }
+        },
+        required: ["path", "old_str", "new_str"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_tool_proposals",
+      description: "List all previously proposed tools and their status (pending, approved, rejected).",
+      parameters: { type: "object", properties: {} }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "propose_tool",
+      description:
+        "Propose a brand-new tool composed only from get_overdue_tasks/search_tasks plus an optional filter step. " +
+        "This does not register the tool - it only creates a pending proposal the user must approve in the UI before it becomes callable.",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "lowercase_snake_case" },
+          description: { type: "string" },
+          steps: { type: "array", items: { type: "object" } }
+        },
+        required: ["name", "description", "steps"]
+      }
+    }
   }
 ];
 
-async function callRouter(messages) {
-  const url = process.env.AGENT_ROUTER_URL || "https://router.fiazzytech.live/gpt/v1/chat/completions";
-  const model = process.env.AGENT_ROUTER_MODEL || "gpt-5.6-sol";
-  const apiKey = process.env.AGENT_ROUTER_API_KEY;
-  if (!apiKey) throw new Error("AGENT_ROUTER_API_KEY is not set");
-
+async function callProvider(url, model, apiKey, messages, extraHeaders) {
   const res = await fetch(url, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
-      Accept: "application/json",
-      "User-Agent": "codex_cli_rs/0.101.0",
-      Originator: "codex_cli_rs",
-      Version: "0.101.0"
+      ...(extraHeaders || {})
     },
     body: JSON.stringify({
       model,
       messages,
       tools: TOOL_DEFS,
       tool_choice: "auto",
-      max_tokens: 600,
-      stream: false
+      max_tokens: 600
     })
   });
-
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`router ${res.status}: ${text}`);
+    throw new Error(`${url} responded ${res.status}: ${text}`);
   }
   return res.json();
+}
+
+async function callRouter(messages) {
+  const primaryUrl = process.env.AGENT_ROUTER_URL || "https://router.fiazzytech.live/gpt/v1/chat/completions";
+  const primaryModel = process.env.AGENT_ROUTER_MODEL || "gpt-5.6-sol";
+  const primaryKey = process.env.AGENT_ROUTER_API_KEY;
+
+  if (primaryKey) {
+    try {
+      return await callProvider(primaryUrl, primaryModel, primaryKey, messages);
+    } catch (primaryErr) {
+      console.error("Primary router failed, falling back to OpenRouter:", primaryErr.message);
+    }
+  }
+
+  const fallbackKey = process.env.OPENROUTER_API_KEY;
+  if (!fallbackKey) {
+    throw new Error("Primary router failed and OPENROUTER_API_KEY is not set for fallback.");
+  }
+  const fallbackModel = process.env.OPENROUTER_MODEL || "nvidia/nemotron-3-ultra-550b-a55b:free";
+  return callProvider(
+    "https://openrouter.ai/api/v1/chat/completions",
+    fallbackModel,
+    fallbackKey,
+    messages,
+    { "HTTP-Referer": "https://webmcp-wdd8.onrender.com", "X-Title": "Signal Task Board" }
+  );
 }
 
 app.post("/api/agent-chat", async (req, res) => {
@@ -515,9 +657,11 @@ app.post("/api/agent-chat", async (req, res) => {
   const systemPrompt = {
     role: "system",
     content:
-      "You are a task assistant with tool access to a task board. Reads are always fine. " +
-      "Never call bulk_update_status with confirmed:true unless the user has explicitly said yes to that exact change earlier in this conversation. " +
-      "If you haven't asked yet, ask first and stop."
+      "You are a task assistant with tool access to a task board, a small project file workspace, and the ability to propose new tools. " +
+      "Reads are always fine. If you're unsure what tools you have, call list_own_tools instead of guessing a name. " +
+      "Never call bulk_update_status or write_project_file with confirmed:true unless the user has explicitly said yes to that exact change earlier in this conversation. " +
+      "If you haven't asked yet, ask first and stop. propose_tool never needs confirmation - it only creates a pending suggestion the user reviews in the UI. " +
+      "edit_project_file is a small surgical patch and doesn't require confirmation, but it will fail if old_str isn't uniquely identifiable in the file."
   };
   const messages = [systemPrompt, ...history];
   const toolLog = [];
