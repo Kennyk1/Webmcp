@@ -216,6 +216,15 @@ async function updateTaskStatus(id, status) {
 
 function appendAgentMessage({ text, variant, onApprove, onReject }) {
   const thread = document.getElementById("agent-thread");
+  const isUser = variant === "user";
+
+  const row = document.createElement("div");
+  row.className = "msg-row" + (isUser ? " msg-row-user" : " msg-row-agent");
+
+  const avatar = document.createElement("div");
+  avatar.className = "msg-avatar" + (isUser ? " msg-avatar-user" : " msg-avatar-agent");
+  avatar.textContent = isUser ? "U" : "A";
+
   const message = document.createElement("div");
   message.className = "agent-message" + (variant ? ` ${variant}` : "");
   const p = document.createElement("p");
@@ -224,30 +233,60 @@ function appendAgentMessage({ text, variant, onApprove, onReject }) {
   message.appendChild(p);
 
   if (onApprove) {
-    const row = document.createElement("div");
-    row.className = "approve-row";
+    const actionRow = document.createElement("div");
+    actionRow.className = "approve-row";
     const yes = document.createElement("button");
     yes.className = "approve-yes";
     yes.textContent = "Approve";
     yes.onclick = async () => {
-      row.remove();
+      actionRow.remove();
       await onApprove();
     };
     const no = document.createElement("button");
     no.className = "approve-no";
     no.textContent = "Not now";
     no.onclick = async () => {
-      row.remove();
+      actionRow.remove();
       if (onReject) await onReject();
     };
-    row.appendChild(yes);
-    row.appendChild(no);
-    message.appendChild(row);
+    actionRow.appendChild(yes);
+    actionRow.appendChild(no);
+    message.appendChild(actionRow);
   }
 
-  thread.appendChild(message);
+  if (isUser) {
+    row.appendChild(message);
+    row.appendChild(avatar);
+  } else {
+    row.appendChild(avatar);
+    row.appendChild(message);
+  }
+
+  thread.appendChild(row);
   thread.scrollTop = thread.scrollHeight;
   return message;
+}
+
+function showTypingIndicator() {
+  const thread = document.getElementById("agent-thread");
+  const row = document.createElement("div");
+  row.className = "msg-row msg-row-agent";
+  row.id = "typing-indicator";
+  const avatar = document.createElement("div");
+  avatar.className = "msg-avatar msg-avatar-agent";
+  avatar.textContent = "A";
+  const bubble = document.createElement("div");
+  bubble.className = "agent-message typing-bubble";
+  bubble.innerHTML = '<span class="dot"></span><span class="dot"></span><span class="dot"></span>';
+  row.appendChild(avatar);
+  row.appendChild(bubble);
+  thread.appendChild(row);
+  thread.scrollTop = thread.scrollHeight;
+}
+
+function hideTypingIndicator() {
+  const el = document.getElementById("typing-indicator");
+  if (el) el.remove();
 }
 
 async function approveProposal(proposal) {
@@ -257,19 +296,26 @@ async function approveProposal(proposal) {
     body: JSON.stringify({ status: "approved" })
   });
 
-  document.modelContext.registerTool({
-    name: proposal.name,
-    description: `${proposal.description} (created by agent, approved by user)`,
-    inputSchema: { type: "object", properties: {}, additionalProperties: true },
-    execute: async (input) => {
-      const result = await runProposedTool(proposal.steps, input || {});
-      return { content: [{ type: "text", text: JSON.stringify(result) }] };
-    }
-  });
-  listTool(proposal.name, `custom tool, approved ${new Date().toLocaleTimeString()}`);
+  if ("modelContext" in document) {
+    document.modelContext.registerTool({
+      name: proposal.name,
+      description: `${proposal.description} (created by agent, approved by user)`,
+      inputSchema: { type: "object", properties: {}, additionalProperties: true },
+      execute: async (input) => {
+        const result = await runProposedTool(proposal.steps, input || {});
+        return { content: [{ type: "text", text: JSON.stringify(result) }] };
+      }
+    });
+    listTool(proposal.name, `custom tool, approved ${new Date().toLocaleTimeString()}`);
+    appendAgentMessage({ text: `"${proposal.name}" is now live and callable via WebMCP.`, variant: "confirmed" });
+  } else {
+    appendAgentMessage({
+      text: `"${proposal.name}" is approved. It'll register as a WebMCP tool once this page is opened in a WebMCP-enabled browser.`,
+      variant: "confirmed"
+    });
+  }
 
   await loadProposals();
-  appendAgentMessage({ text: `"${proposal.name}" is now live and callable.`, variant: "confirmed" });
 }
 
 async function rejectProposal(proposal) {
@@ -366,7 +412,10 @@ try {
   });
 }
 
+const registeredToolsMeta = [];
+
 function listTool(name, description) {
+  registeredToolsMeta.push({ name, description });
   const li = document.createElement("li");
   const code = document.createElement("code");
   code.textContent = name;
@@ -659,6 +708,14 @@ function registerWebMcpTools() {
     }
   });
   listTool("list_project_files", "lists workspace files");
+
+  document.modelContext.registerTool({
+    name: "list_own_tools",
+    description: "List every tool currently registered on this page, with descriptions. Call this instead of guessing a tool name.",
+    inputSchema: { type: "object", properties: {} },
+    execute: async () => ({ content: [{ type: "text", text: JSON.stringify(registeredToolsMeta) }] })
+  });
+  listTool("list_own_tools", "introspection, avoids hallucinated tool names");
 }
 
 let chatHistory = [];
@@ -672,6 +729,7 @@ async function sendChatMessage(text) {
   const button = form.querySelector("button");
   button.disabled = true;
   input.disabled = true;
+  showTypingIndicator();
 
   try {
     const res = await fetch("/api/agent-chat", {
@@ -680,9 +738,10 @@ async function sendChatMessage(text) {
       body: JSON.stringify({ history: chatHistory })
     });
     const body = await res.json();
+    hideTypingIndicator();
 
     if (!res.ok) {
-      appendAgentMessage({ text: `Router error: ${body.message || body.error}` });
+      appendAgentMessage({ text: `Router error: ${body.message || body.error}`, variant: "error" });
       return;
     }
 
@@ -694,11 +753,25 @@ async function sendChatMessage(text) {
       trace.className = "tool-trace";
       trace.textContent = body.toolLog.map((t) => t.name).join(" → ");
       message.appendChild(trace);
+
+      body.toolLog
+        .filter((t) => t.name === "propose_tool" && t.result && t.result.id && t.result.status === "pending")
+        .forEach((t) => {
+          appendAgentMessage({
+            text: `Agent wants to create a new tool: "${t.result.name}" — ${t.result.description}`,
+            variant: "pending",
+            onApprove: () => approveProposal(t.result),
+            onReject: () => rejectProposal(t.result)
+          });
+        });
     }
 
     await loadTasks();
+    await loadFiles();
+    await loadProposals();
   } catch (err) {
-    appendAgentMessage({ text: `Failed to reach the agent: ${err.message}` });
+    hideTypingIndicator();
+    appendAgentMessage({ text: `Failed to reach the agent: ${err.message}`, variant: "error" });
   } finally {
     button.disabled = false;
     input.disabled = false;
