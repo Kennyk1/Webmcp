@@ -110,6 +110,37 @@ let tasks = [
   }
 ];
 
+// --- Tool Forge: agent-proposed tools, composed only from whitelisted
+// read primitives. No arbitrary code ever reaches the server or the
+// client's registerTool() call — steps are interpreted, never eval'd.
+const ALLOWED_PRIMITIVES = ["get_overdue_tasks", "search_tasks"];
+const ALLOWED_FILTER_OPS = ["equals", "includes"];
+
+let toolProposals = [];
+
+function isValidSteps(steps) {
+  if (!Array.isArray(steps) || steps.length === 0 || steps.length > 4) return false;
+  return steps.every((step) => {
+    if (step.type === "call") {
+      if (!ALLOWED_PRIMITIVES.includes(step.action)) return false;
+      if (step.params && typeof step.params !== "object") return false;
+      return true;
+    }
+    if (step.type === "filter") {
+      return (
+        typeof step.field === "string" &&
+        ALLOWED_FILTER_OPS.includes(step.op) &&
+        (typeof step.value === "string" || typeof step.value === "number")
+      );
+    }
+    return false;
+  });
+}
+
+// --- Project file store: a small in-memory scratch workspace an agent
+// can write generated files to (e.g. a tool implementation, notes, code).
+let projectFiles = {};
+
 function isOverdue(task) {
   return task.status !== "done" && task.dueDate < daysFromNow(0);
 }
@@ -217,6 +248,79 @@ app.get("/api/tasks/search", (req, res) => {
     results = results.filter((t) => t.title.toLowerCase().includes(q));
   }
   res.json(results);
+});
+
+app.post("/api/tool-proposals", (req, res) => {
+  const { name, description, steps } = req.body || {};
+  if (!name || !description || !isValidSteps(steps)) {
+    return res.status(400).json({
+      error: "invalid_proposal",
+      message: "name, description, and steps (composed only from allowed primitives) are required."
+    });
+  }
+  if (!/^[a-z][a-z0-9_]{2,40}$/.test(name)) {
+    return res.status(400).json({ error: "invalid_name", message: "Tool names must be lowercase snake_case." });
+  }
+  const proposal = {
+    id: crypto.randomUUID(),
+    name,
+    description,
+    steps,
+    status: "pending",
+    createdAt: new Date().toISOString()
+  };
+  toolProposals.unshift(proposal);
+  res.status(201).json(proposal);
+});
+
+app.get("/api/tool-proposals", (req, res) => {
+  res.json(toolProposals);
+});
+
+app.patch("/api/tool-proposals/:id", (req, res) => {
+  const proposal = toolProposals.find((p) => p.id === req.params.id);
+  if (!proposal) return res.status(404).json({ error: "not_found" });
+  const { status } = req.body || {};
+  if (!["approved", "rejected"].includes(status)) {
+    return res.status(400).json({ error: "invalid_status" });
+  }
+  // This endpoint only records the human decision. The actual
+  // document.modelContext.registerTool() call happens client-side,
+  // triggered by the approval button's UI state change - not by the
+  // agent calling a tool. Tools don't register other tools here.
+  proposal.status = status;
+  proposal.decidedAt = new Date().toISOString();
+  res.json(proposal);
+});
+
+
+app.get("/api/files", (req, res) => {
+  const list = Object.entries(projectFiles).map(([filePath, f]) => ({
+    path: filePath,
+    updatedAt: f.updatedAt,
+    size: f.content.length
+  }));
+  res.json(list);
+});
+
+app.get("/api/files/content", (req, res) => {
+  const { path: filePath } = req.query;
+  if (!filePath || !projectFiles[filePath]) {
+    return res.status(404).json({ error: "not_found" });
+  }
+  res.json({ path: filePath, content: projectFiles[filePath].content });
+});
+
+app.put("/api/files", (req, res) => {
+  const { path: filePath, content } = req.body || {};
+  if (!filePath || typeof content !== "string") {
+    return res.status(400).json({ error: "path and content are required" });
+  }
+  if (content.length > 20000) {
+    return res.status(413).json({ error: "file_too_large" });
+  }
+  projectFiles[filePath] = { content, updatedAt: new Date().toISOString() };
+  res.status(201).json({ path: filePath, updatedAt: projectFiles[filePath].updatedAt });
 });
 
 const PORT = process.env.PORT || 3000;
