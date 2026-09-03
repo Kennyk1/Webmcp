@@ -39,6 +39,46 @@ The page also ships a "Run agent demo" button in the Agent panel that plays
 out this exact flow locally, for anyone testing without an agent-enabled
 browser in front of them.
 
+## Tool Forge — agents that extend their own toolset
+
+Signal also lets an agent propose a *new* tool at runtime, composed only
+from existing read primitives, which becomes real and callable only after
+a human clicks Approve:
+
+- `propose_tool(name, description, steps)` — steps are a short pipeline
+  (`call` a whitelisted primitive like `get_overdue_tasks` or
+  `search_tasks`, then optionally `filter` the result). This does **not**
+  register anything. It records the proposal server-side and renders an
+  approval card in the Agent panel.
+- `list_tool_proposals()` — read-only, lets an agent check what it
+  proposed and whether it's pending, approved, or rejected.
+
+There's no code generation and no `eval`. A proposed tool can only be a
+composition of primitives the server already whitelists
+(`ALLOWED_PRIMITIVES` in `server.js`), so the worst a proposal can do is
+combine existing reads in a new way — it can't reach new data or perform
+writes.
+
+Registration itself happens in `approveProposal()`, which only ever runs
+from a real click on the Approve button. No tool's `execute()` function
+calls `registerTool()` directly — new tools are a function of UI state
+(the approval card being clicked), not one tool triggering another. That
+mirrors the WebMCP spec's own guidance against tools registering tools
+directly.
+
+## Project files — a scratch workspace for the agent
+
+A small in-memory file store the agent can read and write, shown in the
+UI under `/workspace/...`:
+
+- `write_project_file(path, content)`
+- `read_project_file(path)`
+- `list_project_files()`
+
+Useful as a place for an agent to leave an artifact behind — notes, a
+generated script, a draft file — that persists across the conversation
+and is visible to the user in the same page, not buried in chat history.
+
 ## Run locally
 
 ```
@@ -56,7 +96,7 @@ your overdue tasks.
 ## Stack
 
 Plain Express backend, in-memory store, no frontend build step — the whole
-UI is vanilla JS registering tools via `navigator.modelContext.registerTool`.
+UI is vanilla JS registering tools via `document.modelContext.registerTool`.
 Kept intentionally build-free so it deploys to Render, Vercel, or Netlify
 with zero configuration.
 
