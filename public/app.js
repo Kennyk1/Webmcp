@@ -108,12 +108,32 @@ function renderFiles() {
       pre.textContent = body.content;
       pre.classList.toggle("open");
     };
+    const runBtn = document.createElement("button");
+    runBtn.textContent = "Run";
+    runBtn.onclick = async () => {
+      const res = await fetch(`/api/files/content?path=${encodeURIComponent(f.path)}`);
+      const body = await res.json();
+      runBtn.disabled = true;
+      runBtn.textContent = "Running…";
+      const result = await runInSandbox(body.content);
+      runBtn.disabled = false;
+      runBtn.textContent = "Run";
+      runOutput.textContent = result.ok
+        ? (result.logs.join("\n") || "(no output)")
+        : `Error: ${result.error}`;
+      runOutput.classList.add("open");
+      runOutput.classList.toggle("error", !result.ok);
+    };
     row.appendChild(path);
     row.appendChild(btn);
+    row.appendChild(runBtn);
     const pre = document.createElement("pre");
     pre.className = "file-content";
+    const runOutput = document.createElement("pre");
+    runOutput.className = "file-content run-output";
     li.appendChild(row);
     li.appendChild(pre);
+    li.appendChild(runOutput);
     list.appendChild(li);
   });
 }
@@ -194,7 +214,7 @@ async function updateTaskStatus(id, status) {
   await loadTasks();
 }
 
-function appendAgentMessage({ text, variant, onApprove }) {
+function appendAgentMessage({ text, variant, onApprove, onReject }) {
   const thread = document.getElementById("agent-thread");
   const message = document.createElement("div");
   message.className = "agent-message" + (variant ? ` ${variant}` : "");
@@ -216,7 +236,10 @@ function appendAgentMessage({ text, variant, onApprove }) {
     const no = document.createElement("button");
     no.className = "approve-no";
     no.textContent = "Not now";
-    no.onclick = () => row.remove();
+    no.onclick = async () => {
+      row.remove();
+      if (onReject) await onReject();
+    };
     row.appendChild(yes);
     row.appendChild(no);
     message.appendChild(row);
@@ -289,6 +312,57 @@ async function runAgentDemo() {
       await loadTasks();
       appendAgentMessage({ text: `Done. Marked ${ids.length} task${ids.length > 1 ? "s" : ""} complete.`, variant: "confirmed" });
     }
+  });
+}
+
+function runInSandbox(code) {
+  return new Promise((resolve) => {
+    const iframe = document.createElement("iframe");
+    iframe.sandbox = "allow-scripts";
+    iframe.style.display = "none";
+    document.body.appendChild(iframe);
+
+    let done = false;
+    const logs = [];
+
+    function cleanup(result) {
+      if (done) return;
+      done = true;
+      window.removeEventListener("message", onMessage);
+      clearTimeout(timeoutId);
+      iframe.remove();
+      resolve(result);
+    }
+
+    function onMessage(event) {
+      if (event.source !== iframe.contentWindow) return;
+      if (event.data.type === "log") logs.push(event.data.text);
+      else if (event.data.type === "done") cleanup({ ok: true, logs, error: null });
+      else if (event.data.type === "error") cleanup({ ok: false, logs, error: event.data.text });
+    }
+    window.addEventListener("message", onMessage);
+
+    const timeoutId = setTimeout(() => {
+      cleanup({ ok: false, logs, error: "Execution timed out after 3s." });
+    }, 3000);
+
+    const escaped = JSON.stringify(code);
+    const doc = `<!DOCTYPE html><html><head>
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; connect-src 'none'">
+</head><body><script>
+const userCode = ${escaped};
+const send = (type, text) => parent.postMessage({ type, text }, "*");
+console.log = (...args) => send("log", args.map(String).join(" "));
+console.error = (...args) => send("error", args.map(String).join(" "));
+try {
+  new Function(userCode)();
+  send("done", "");
+} catch (err) {
+  send("error", String((err && err.message) || err));
+}
+<\/script></body></html>`;
+
+    iframe.srcdoc = doc;
   });
 }
 
@@ -424,7 +498,6 @@ function registerWebMcpTools() {
   });
   listTool("add_task", "creates a task");
 
-
   document.modelContext.registerTool({
     name: "propose_tool",
     description:
@@ -460,7 +533,8 @@ function registerWebMcpTools() {
       appendAgentMessage({
         text: `Agent wants to create a new tool: "${proposal.name}" — ${proposal.description}`,
         variant: "pending",
-        onApprove: () => approveProposal(proposal)
+        onApprove: () => approveProposal(proposal),
+        onReject: () => rejectProposal(proposal)
       });
       return {
         content: [{ type: "text", text: "Proposal recorded. Awaiting the user's approval in the UI before it can be called." }]
@@ -479,8 +553,6 @@ function registerWebMcpTools() {
     }
   });
   listTool("list_tool_proposals", "read-only, checks proposal status");
-
-  // Project file store
 
   document.modelContext.registerTool({
     name: "write_project_file",
@@ -504,7 +576,62 @@ function registerWebMcpTools() {
       return { content: [{ type: "text", text: JSON.stringify(body) }], isError: !res.ok };
     }
   });
-  listTool("write_project_file", "the only write tool for the file store");
+  listTool("write_project_file", "the only full-overwrite tool for the file store");
+
+  document.modelContext.registerTool({
+    name: "edit_project_file",
+    description:
+      "Edit part of an existing project file by exact string replacement, without rewriting the whole file. " +
+      "old_str must match the file's content in exactly one place; add surrounding context to make it unique.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: { type: "string" },
+        old_str: { type: "string" },
+        new_str: { type: "string" }
+      },
+      required: ["path", "old_str", "new_str"]
+    },
+    execute: async ({ path, old_str, new_str }) => {
+      const res = await fetch("/api/files/edit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path, old_str, new_str })
+      });
+      const body = await res.json();
+      await loadFiles();
+      return { content: [{ type: "text", text: JSON.stringify(body) }], isError: !res.ok };
+    }
+  });
+  listTool("edit_project_file", "surgical patch; rejects ambiguous or missing matches");
+
+  document.modelContext.registerTool({
+    name: "run_code",
+    description:
+      "Run the JavaScript in a project file inside an isolated, network-disabled sandbox with a 3s timeout. " +
+      "Captures console.log/console.error output. Runs entirely in the browser, never on the server.",
+    inputSchema: {
+      type: "object",
+      properties: { path: { type: "string" } },
+      required: ["path"]
+    },
+    execute: async ({ path }) => {
+      const fileRes = await fetch(`/api/files/content?path=${encodeURIComponent(path)}`);
+      const file = await fileRes.json();
+      if (!fileRes.ok) {
+        return { content: [{ type: "text", text: JSON.stringify(file) }], isError: true };
+      }
+      const result = await runInSandbox(file.content);
+      appendAgentMessage({
+        text: result.ok
+          ? `Ran ${path}. Output: ${result.logs.join(" | ") || "(no output)"}`
+          : `${path} failed: ${result.error}`,
+        variant: result.ok ? "confirmed" : "error"
+      });
+      return { content: [{ type: "text", text: JSON.stringify(result) }], isError: !result.ok };
+    }
+  });
+  listTool("run_code", "JS-only, sandboxed, no network, 3s timeout");
 
   document.modelContext.registerTool({
     name: "read_project_file",
