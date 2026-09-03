@@ -661,6 +661,51 @@ function registerWebMcpTools() {
   listTool("list_project_files", "lists workspace files");
 }
 
+let chatHistory = [];
+
+async function sendChatMessage(text) {
+  appendAgentMessage({ text, variant: "user" });
+  chatHistory.push({ role: "user", content: text });
+
+  const form = document.getElementById("agent-chat-form");
+  const input = document.getElementById("agent-chat-input");
+  const button = form.querySelector("button");
+  button.disabled = true;
+  input.disabled = true;
+
+  try {
+    const res = await fetch("/api/agent-chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ history: chatHistory })
+    });
+    const body = await res.json();
+
+    if (!res.ok) {
+      appendAgentMessage({ text: `Router error: ${body.message || body.error}` });
+      return;
+    }
+
+    chatHistory.push({ role: "assistant", content: body.reply });
+    const message = appendAgentMessage({ text: body.reply || "(no reply)" });
+
+    if (body.toolLog && body.toolLog.length > 0) {
+      const trace = document.createElement("div");
+      trace.className = "tool-trace";
+      trace.textContent = body.toolLog.map((t) => t.name).join(" → ");
+      message.appendChild(trace);
+    }
+
+    await loadTasks();
+  } catch (err) {
+    appendAgentMessage({ text: `Failed to reach the agent: ${err.message}` });
+  } finally {
+    button.disabled = false;
+    input.disabled = false;
+    input.focus();
+  }
+}
+
 document.addEventListener("DOMContentLoaded", async () => {
   await loadTasks();
   await loadProposals();
@@ -673,4 +718,14 @@ document.addEventListener("DOMContentLoaded", async () => {
   demoBtn.style.alignSelf = "flex-start";
   demoBtn.onclick = runAgentDemo;
   document.getElementById("agent-thread").appendChild(demoBtn);
+
+  const chatForm = document.getElementById("agent-chat-form");
+  chatForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const input = document.getElementById("agent-chat-input");
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = "";
+    sendChatMessage(text);
+  });
 });

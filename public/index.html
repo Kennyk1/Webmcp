@@ -52,6 +52,12 @@
         <p>Tools exposed through WebMCP. Reads run freely; writes wait for you.</p>
       </div>
       <div class="agent-thread" id="agent-thread"></div>
+
+      <form id="agent-chat-form" class="agent-chat-form">
+        <input id="agent-chat-input" type="text" placeholder="Ask the agent, e.g. check overdue tasks" autocomplete="off" />
+        <button type="submit">Send</button>
+      </form>
+
       <div class="tool-list">
         <h3>Registered tools</h3>
         <ul id="tool-list"></ul>

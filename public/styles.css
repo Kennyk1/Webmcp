@@ -280,6 +280,53 @@ body {
   color: var(--ink-soft);
 }
 
+.agent-chat-form {
+  display: flex;
+  gap: 8px;
+}
+
+.agent-chat-form input {
+  flex: 1;
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.agent-chat-form button {
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  border: none;
+  background: var(--teal);
+  color: #fff;
+  cursor: pointer;
+}
+
+.agent-chat-form button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.agent-message.user {
+  background: var(--paper);
+  border-color: var(--line);
+  align-self: flex-end;
+}
+
+.agent-message .tool-trace {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--ink-soft);
+  border-top: 1px solid var(--line);
+  padding-top: 6px;
+}
+
 .tool-list h3 {
   font-family: 'Space Grotesk', sans-serif;
   font-size: 13px;
