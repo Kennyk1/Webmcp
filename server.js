@@ -483,14 +483,19 @@ async function callRouter(messages) {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      "User-Agent": "codex_cli_rs/0.101.0",
+      Originator: "codex_cli_rs",
+      Version: "0.101.0"
     },
     body: JSON.stringify({
       model,
       messages,
       tools: TOOL_DEFS,
       tool_choice: "auto",
-      max_tokens: 600
+      max_tokens: 600,
+      stream: false
     })
   });
 
