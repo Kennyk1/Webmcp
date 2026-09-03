@@ -1,4 +1,125 @@
-const state = { tasks: [] };
+const state = { tasks: [], proposals: [], files: [] };
+
+// Primitives an agent-proposed tool is allowed to compose. Mirrors the
+// server's whitelist - the interpreter below never eval()s agent input,
+// it only walks this fixed set of steps.
+const PRIMITIVE_CALLS = {
+  get_overdue_tasks: async () => {
+    const res = await fetch("/api/tasks/overdue");
+    return res.json();
+  },
+  search_tasks: async (params) => {
+    const usp = new URLSearchParams();
+    if (params.query) usp.set("query", params.query);
+    if (params.status) usp.set("status", params.status);
+    if (params.tag) usp.set("tag", params.tag);
+    const res = await fetch(`/api/tasks/search?${usp.toString()}`);
+    return res.json();
+  }
+};
+
+function resolveValue(raw, input) {
+  if (typeof raw === "string" && raw.startsWith("$input.")) {
+    return input[raw.slice(7)];
+  }
+  return raw;
+}
+
+async function runProposedTool(steps, input) {
+  let result = null;
+  for (const step of steps) {
+    if (step.type === "call") {
+      const params = {};
+      if (step.params) {
+        for (const [k, v] of Object.entries(step.params)) params[k] = resolveValue(v, input);
+      }
+      result = await PRIMITIVE_CALLS[step.action](params);
+    } else if (step.type === "filter") {
+      const value = resolveValue(step.value, input);
+      result = (result || []).filter((item) => {
+        const field = item[step.field];
+        if (step.op === "equals") return field === value;
+        if (step.op === "includes") return String(field || "").toLowerCase().includes(String(value || "").toLowerCase());
+        return false;
+      });
+    }
+  }
+  return result;
+}
+
+async function loadProposals() {
+  const res = await fetch("/api/tool-proposals");
+  state.proposals = await res.json();
+  renderProposals();
+}
+
+function renderProposals() {
+  const list = document.getElementById("proposal-list");
+  if (!list) return;
+  list.innerHTML = "";
+  if (state.proposals.length === 0) {
+    list.innerHTML = '<li class="empty-note">No tools proposed yet.</li>';
+    return;
+  }
+  state.proposals.forEach((p) => {
+    const li = document.createElement("li");
+    li.className = "proposal-item";
+    const head = document.createElement("div");
+    head.className = "proposal-head";
+    const code = document.createElement("code");
+    code.textContent = p.name;
+    const badge = document.createElement("span");
+    badge.className = `badge badge-${p.status}`;
+    badge.textContent = p.status;
+    head.appendChild(code);
+    head.appendChild(badge);
+    const desc = document.createElement("p");
+    desc.className = "proposal-desc";
+    desc.textContent = p.description;
+    li.appendChild(head);
+    li.appendChild(desc);
+    list.appendChild(li);
+  });
+}
+
+async function loadFiles() {
+  const res = await fetch("/api/files");
+  state.files = await res.json();
+  renderFiles();
+}
+
+function renderFiles() {
+  const list = document.getElementById("file-list");
+  if (!list) return;
+  list.innerHTML = "";
+  if (state.files.length === 0) {
+    list.innerHTML = '<li class="empty-note">No project files yet.</li>';
+    return;
+  }
+  state.files.forEach((f) => {
+    const li = document.createElement("li");
+    li.className = "file-item";
+    const row = document.createElement("div");
+    row.className = "file-row";
+    const path = document.createElement("code");
+    path.textContent = `/workspace/${f.path}`;
+    const btn = document.createElement("button");
+    btn.textContent = "View";
+    btn.onclick = async () => {
+      const res = await fetch(`/api/files/content?path=${encodeURIComponent(f.path)}`);
+      const body = await res.json();
+      pre.textContent = body.content;
+      pre.classList.toggle("open");
+    };
+    row.appendChild(path);
+    row.appendChild(btn);
+    const pre = document.createElement("pre");
+    pre.className = "file-content";
+    li.appendChild(row);
+    li.appendChild(pre);
+    list.appendChild(li);
+  });
+}
 
 const columnMap = { todo: "col-todo", doing: "col-doing", done: "col-done" };
 
@@ -107,6 +228,43 @@ function appendAgentMessage({ text, variant, onApprove }) {
   thread.appendChild(message);
   thread.scrollTop = thread.scrollHeight;
   return message;
+}
+
+// Registering a tool here happens ONLY from this function, and this
+// function is only ever called from a user's own Approve click - never
+// from inside another tool's execute(). That keeps registration a
+// function of UI state (a human decision rendered on screen), which is
+// the pattern the WebMCP spec discussion recommends over tools directly
+// registering other tools.
+async function approveProposal(proposal) {
+  await fetch(`/api/tool-proposals/${proposal.id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status: "approved" })
+  });
+
+  document.modelContext.registerTool({
+    name: proposal.name,
+    description: `${proposal.description} (created by agent, approved by user)`,
+    inputSchema: { type: "object", properties: {}, additionalProperties: true },
+    execute: async (input) => {
+      const result = await runProposedTool(proposal.steps, input || {});
+      return { content: [{ type: "text", text: JSON.stringify(result) }] };
+    }
+  });
+  listTool(proposal.name, `custom tool, approved ${new Date().toLocaleTimeString()}`);
+
+  await loadProposals();
+  appendAgentMessage({ text: `"${proposal.name}" is now live and callable.`, variant: "confirmed" });
+}
+
+async function rejectProposal(proposal) {
+  await fetch(`/api/tool-proposals/${proposal.id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status: "rejected" })
+  });
+  await loadProposals();
 }
 
 async function runAgentDemo() {
@@ -274,10 +432,122 @@ function registerWebMcpTools() {
     }
   });
   listTool("add_task", "creates a task");
+
+  // --- Tool Forge ---
+
+  document.modelContext.registerTool({
+    name: "propose_tool",
+    description:
+      "Propose a new tool composed from existing read primitives (get_overdue_tasks, search_tasks) plus a filter step. " +
+      "This does NOT register the tool. It surfaces a card in the UI for the user to Approve or Reject; the tool only " +
+      "becomes callable after a human clicks Approve.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "lowercase_snake_case name for the new tool" },
+        description: { type: "string" },
+        steps: {
+          type: "array",
+          description:
+            "Up to 4 steps. type:'call' with action in [get_overdue_tasks, search_tasks] and optional params " +
+            "(values can be literals or '$input.fieldName'). type:'filter' with field, op ('equals'|'includes'), value.",
+          items: { type: "object" }
+        }
+      },
+      required: ["name", "description", "steps"]
+    },
+    execute: async ({ name, description, steps }) => {
+      const res = await fetch("/api/tool-proposals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, description, steps })
+      });
+      const proposal = await res.json();
+      if (!res.ok) {
+        return { content: [{ type: "text", text: JSON.stringify(proposal) }], isError: true };
+      }
+      await loadProposals();
+      appendAgentMessage({
+        text: `Agent wants to create a new tool: "${proposal.name}" — ${proposal.description}`,
+        variant: "pending",
+        onApprove: () => approveProposal(proposal)
+      });
+      return {
+        content: [{ type: "text", text: "Proposal recorded. Awaiting the user's approval in the UI before it can be called." }]
+      };
+    }
+  });
+  listTool("propose_tool", "surfaces a new-tool card; never self-registers");
+
+  document.modelContext.registerTool({
+    name: "list_tool_proposals",
+    description: "List all proposed tools and their status (pending, approved, rejected).",
+    inputSchema: { type: "object", properties: {} },
+    execute: async () => {
+      const res = await fetch("/api/tool-proposals");
+      return { content: [{ type: "text", text: JSON.stringify(await res.json()) }] };
+    }
+  });
+  listTool("list_tool_proposals", "read-only, checks proposal status");
+
+  // --- Project file store ---
+
+  document.modelContext.registerTool({
+    name: "write_project_file",
+    description: "Write or overwrite a file in the shared project workspace, e.g. app.py.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "e.g. app.py or src/utils.js" },
+        content: { type: "string" }
+      },
+      required: ["path", "content"]
+    },
+    execute: async ({ path, content }) => {
+      const res = await fetch("/api/files", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path, content })
+      });
+      const body = await res.json();
+      await loadFiles();
+      return { content: [{ type: "text", text: JSON.stringify(body) }], isError: !res.ok };
+    }
+  });
+  listTool("write_project_file", "the only write tool for the file store");
+
+  document.modelContext.registerTool({
+    name: "read_project_file",
+    description: "Read a file's contents from the shared project workspace.",
+    inputSchema: {
+      type: "object",
+      properties: { path: { type: "string" } },
+      required: ["path"]
+    },
+    execute: async ({ path }) => {
+      const res = await fetch(`/api/files/content?path=${encodeURIComponent(path)}`);
+      const body = await res.json();
+      return { content: [{ type: "text", text: JSON.stringify(body) }], isError: !res.ok };
+    }
+  });
+  listTool("read_project_file", "reads one file by path");
+
+  document.modelContext.registerTool({
+    name: "list_project_files",
+    description: "List all files currently in the shared project workspace.",
+    inputSchema: { type: "object", properties: {} },
+    execute: async () => {
+      const res = await fetch("/api/files");
+      return { content: [{ type: "text", text: JSON.stringify(await res.json()) }] };
+    }
+  });
+  listTool("list_project_files", "lists workspace files");
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
   await loadTasks();
+  await loadProposals();
+  await loadFiles();
   registerWebMcpTools();
   appendAgentMessage({ text: "Ask your agent to check overdue tasks, or click below to see the approval flow." });
   const demoBtn = document.createElement("button");
