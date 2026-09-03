@@ -84,19 +84,8 @@ run, shown in the UI under `/workspace/...`:
   timeout. Captures `console.log`/`console.error` output and shows it in
   the Agent panel, entirely in the browser — nothing runs on the server.
 
-  This is JS-only for now. It's a small piece of supporting infrastructure
-  inside a separate project I'm building called **Cipher** — an AI agent
-  that's been in active development for about two months. This sandbox
-  isn't the part that makes Cipher different; Cipher's actual core
-  features are separate from anything shown here, and I'm not detailing
-  them in this repo. What's here is just enough of the plumbing to demo a
-  working, approval-gated code runner for this hackathon, built in less
-  than 22 hours between deciding to enter (Sep 2) and the deadline.
-  Cipher itself isn't blocked on time or difficulty at this point — it's
-  blocked on funding to keep building it properly. If this project
-  places, that's a real step toward getting Cipher there. my biggest thanks will be actually acknowledging this project even tho I wasn't able to do what I wanted due to the time limited for me, would have built something a little bit More interesting like the GitHub design I planned adding and a lot more etc. If you're
-  interested in backing it, reach out: favourdev12@gmail.com or
-  [@favourdeve](https://t.me/favourdeve) on Telegram.
+  This is JS-only for now. The sandbox is a small piece of supporting infrastructure from a separate AI-agent project I'm building called Cipher. For this hackathon, I focused on shipping a working, approval-gated slice of that architecture rather than trying to expose the entire system.
+  I'm continuing to build Cipher separately. If you're interested in backing or collaborating on it, reach out at favourdev12@gmail.com or @favourdeve on Telegram.
 
 There's also a manual **Run** button in the Project files panel, so
 anyone testing the page without an agent in front of them can see the
