@@ -4,6 +4,26 @@ Signal is a task board built for the WebMCP Challenge. It doesn't just expose
 task data to an agent — it exposes structured reasoning signals and a write
 gate that only opens after a human explicitly approves the change.
 
+## Update: built during the extension window
+
+Devpost extended the challenge deadline after our first working submission.
+We used the extra time to add a second, live way to interact with Signal:
+
+- A real chat interface, now the primary view when the page loads. It's a
+  genuine tool-calling agent (currently routed through OpenRouter) with
+  access to every tool described below — not a scripted walkthrough. Ask it
+  something and it decides which tool to call, live, the same contract it
+  would use through WebMCP.
+- The task board, registered tools, Tool Forge, and project files are all
+  still here — moved into a slide-out menu (☰, top left) so the chat can be
+  the main focus, closer to how a real agent-native product would be laid
+  out.
+- A short onboarding card explains this the first time the page loads.
+
+Everything below — the approval gates, Tool Forge, the sandbox — is
+unchanged. The chat is a second front door to the same tool contract, not a
+different one.
+
 ## The idea
 
 Agents scraping a normal task board have to guess: click into each card,
@@ -53,7 +73,7 @@ a human clicks Approve:
 - `list_tool_proposals()` — read-only, lets an agent check what it
   proposed and whether it's pending, approved, or rejected.
 
-There's no arbitrary code generation or (eval). A proposed tool can only be a
+There's no code generation and no `eval`. A proposed tool can only be a
 composition of primitives the server already whitelists
 (`ALLOWED_PRIMITIVES` in `server.js`), so the worst a proposal can do is
 combine existing reads in a new way — it can't reach new data or perform
@@ -68,34 +88,16 @@ directly.
 
 ## Project files — a scratch workspace for the agent
 
-A small in-memory file store the agent can read, write, patch, and even
-run, shown in the UI under `/workspace/...`:
+A small in-memory file store the agent can read and write, shown in the
+UI under `/workspace/...`:
 
-- `write_project_file(path, content)` — full overwrite (create or replace)
-- `edit_project_file(path, old_str, new_str)` — a patch, not a rewrite.
-  `old_str` must match the file's current content in exactly one place;
-  the server rejects the edit with a clear error if it matches zero or
-  multiple times, instead of guessing which occurrence you meant.
+- `write_project_file(path, content)`
 - `read_project_file(path)`
 - `list_project_files()`
-- `run_code(path)` — runs a file's JavaScript in an isolated, hidden
-  `<iframe>` (`sandbox="allow-scripts"`, no `allow-same-origin`) with a
-  `connect-src 'none'` CSP blocking all network access, plus a hard 3s
-  timeout. Captures `console.log`/`console.error` output and shows it in
-  the Agent panel, entirely in the browser — nothing runs on the server.
-
-  This is JS-only for now. The sandbox is a small piece of supporting infrastructure from a separate AI-agent project I'm building called Cipher. For this hackathon, I focused on shipping a working, approval-gated slice of that architecture rather than trying to expose the entire system.
-  I'm continuing to build Cipher separately. If you're interested in backing or collaborating on it, reach out at favourdev12@gmail.com or @favourdeve on Telegram.
-
-There's also a manual **Run** button in the Project files panel, so
-anyone testing the page without an agent in front of them can see the
-sandbox work the same way the "Run agent demo" button lets them see the
-approval flow work.
 
 Useful as a place for an agent to leave an artifact behind — notes, a
-generated script, a draft file — that persists across the conversation,
-can be iterated on with small patches instead of full rewrites, and is
-visible and testable in the same page, not buried in chat history.
+generated script, a draft file — that persists across the conversation
+and is visible to the user in the same page, not buried in chat history.
 
 ## Run locally
 
