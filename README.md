@@ -6,8 +6,8 @@ gate that only opens after a human explicitly approves the change.
 
 ## Update: built during the extension window
 
-Devpost extended the challenge deadline after our first working submission.
-We used the extra time to add a second, live way to interact with Signal:
+Devpost extended the challenge deadline after my first working submission.
+I used the extra time to add a second, live way to interact with Signal:
 
 - A real chat interface, now the primary view when the page loads. It's a
   genuine tool-calling agent (currently routed through OpenRouter) with
@@ -88,12 +88,20 @@ directly.
 
 ## Project files — a scratch workspace for the agent
 
-A small in-memory file store the agent can read and write, shown in the
-UI under `/workspace/...`:
+A small in-memory file store the agent can read, write, patch, and run,
+shown in the UI under `/workspace/...`:
 
-- `write_project_file(path, content)`
-- `read_project_file(path)`
-- `list_project_files()`
+- `write_project_file(path, content)` — full overwrite, requires explicit
+  user confirmation before it executes.
+- `edit_project_file(path, old_str, new_str)` — a surgical patch, not a
+  rewrite. `old_str` must match the file's current content in exactly one
+  place, or the edit is rejected.
+- `read_project_file(path)` / `list_project_files()`
+- `run_code(path)` — runs a file's JavaScript in an isolated, hidden
+  `<iframe>` with no network access and a 3-second timeout. This tool is
+  only reachable by a human clicking Run in the UI — it's deliberately not
+  exposed to the chat agent at all, so execution always requires a real
+  person's click, not just an agent's decision.
 
 Useful as a place for an agent to leave an artifact behind — notes, a
 generated script, a draft file — that persists across the conversation
