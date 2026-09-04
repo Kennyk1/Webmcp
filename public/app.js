@@ -475,7 +475,7 @@ function runInSandbox(code) {
 
     const escaped = JSON.stringify(code);
     const doc = `<!DOCTYPE html><html><head>
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; connect-src 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; connect-src 'none'">
 </head><body><script>
 const userCode = ${escaped};
 const send = (type, text) => parent.postMessage({ type, text }, "*");
