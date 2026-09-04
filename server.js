@@ -149,6 +149,11 @@ function findCompletionSignal(task) {
   return null;
 }
 
+app.get("/api/model-info", (req, res) => {
+  const model = process.env.OPENROUTER_MODEL || "nvidia/nemotron-3-ultra-550b-a55b:free";
+  res.json({ model, provider: "OpenRouter" });
+});
+
 app.get("/api/tasks", (req, res) => {
   res.json(tasks);
 });
