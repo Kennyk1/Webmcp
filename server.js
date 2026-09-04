@@ -588,13 +588,22 @@ const TOOL_DEFS = [
       name: "propose_tool",
       description:
         "Propose a brand-new tool composed only from get_overdue_tasks/search_tasks plus an optional filter step. " +
-        "This does not register the tool - it only creates a pending proposal the user must approve in the UI before it becomes callable.",
+        "This does not register the tool - it only creates a pending proposal the user must approve in the UI before it becomes callable. " +
+        "Each step must be EXACTLY one of these two shapes - no other field names are accepted:\n" +
+        '  {"type": "call", "action": "get_overdue_tasks"} or {"type": "call", "action": "search_tasks", "params": {"tag": "security"}}\n' +
+        '  {"type": "filter", "field": "tag", "op": "equals", "value": "security"} (op is "equals" or "includes")\n' +
+        "Example - a tool that finds overdue tasks tagged security:\n" +
+        '  steps: [{"type": "call", "action": "get_overdue_tasks"}, {"type": "filter", "field": "tag", "op": "equals", "value": "security"}]',
       parameters: {
         type: "object",
         properties: {
           name: { type: "string", description: "lowercase_snake_case" },
           description: { type: "string" },
-          steps: { type: "array", items: { type: "object" } }
+          steps: {
+            type: "array",
+            description: 'Array of {"type":"call","action":...,"params":{...}} or {"type":"filter","field":...,"op":...,"value":...} objects. See description for the exact shape.',
+            items: { type: "object" }
+          }
         },
         required: ["name", "description", "steps"]
       }
