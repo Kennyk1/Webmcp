@@ -150,7 +150,7 @@ function findCompletionSignal(task) {
 }
 
 app.get("/api/model-info", (req, res) => {
-  const model = process.env.OPENROUTER_MODEL || "nvidia/nemotron-3-ultra-550b-a55b:free";
+  const model = process.env.OPENROUTER_MODEL || "x-ai/grok-4.1-fast:free";
   res.json({ model, provider: "OpenRouter" });
 });
 
@@ -606,7 +606,7 @@ const TOOL_DEFS = [
 async function callRouter(messages) {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) throw new Error("OPENROUTER_API_KEY is not set.");
-  const model = process.env.OPENROUTER_MODEL || "nvidia/nemotron-3-ultra-550b-a55b:free";
+  const model = process.env.OPENROUTER_MODEL || "x-ai/grok-4.1-fast:free";
 
   const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
