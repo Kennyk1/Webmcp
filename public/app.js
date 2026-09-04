@@ -633,7 +633,8 @@ function registerWebMcpTools() {
     description:
       "Propose a new tool composed from existing read primitives (get_overdue_tasks, search_tasks) plus a filter step. " +
       "This does NOT register the tool. It surfaces a card in the UI for the user to Approve or Reject; the tool only " +
-      "becomes callable after a human clicks Approve.",
+      "becomes callable after a human clicks Approve. Example - a tool that finds overdue tasks tagged security: " +
+      'steps: [{"type":"call","action":"get_overdue_tasks"},{"type":"filter","field":"tag","op":"equals","value":"security"}]',
     inputSchema: {
       type: "object",
       properties: {
@@ -642,8 +643,8 @@ function registerWebMcpTools() {
         steps: {
           type: "array",
           description:
-            "Up to 4 steps. type:'call' with action in [get_overdue_tasks, search_tasks] and optional params " +
-            "(values can be literals or '$input.fieldName'). type:'filter' with field, op ('equals'|'includes'), value.",
+            'Each item must be EXACTLY {"type":"call","action":"get_overdue_tasks"|"search_tasks","params":{...}} ' +
+            'or {"type":"filter","field":"...","op":"equals"|"includes","value":"..."}. No other field names (no "tool", no "arg", no "kind").',
           items: { type: "object" }
         }
       },
