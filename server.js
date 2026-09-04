@@ -150,8 +150,7 @@ function findCompletionSignal(task) {
 }
 
 app.get("/api/model-info", (req, res) => {
-  const model = process.env.OPENROUTER_MODEL || "z-ai/glm-5.2:free";
-  res.json({ model, provider: "OpenRouter" });
+  res.json({ model: lastSuccessfulModel, provider: "OpenRouter" });
 });
 
 app.get("/api/tasks", (req, res) => {
@@ -603,12 +602,18 @@ const TOOL_DEFS = [
   }
 ];
 
-async function callRouter(messages) {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) throw new Error("OPENROUTER_API_KEY is not set.");
-  const model = process.env.OPENROUTER_MODEL || "z-ai/glm-5.2:free";
-  const maxAttempts = 3;
+const MODEL_CANDIDATES = (
+  process.env.OPENROUTER_MODELS ||
+  "z-ai/glm-5.2:free,google/gemma-4-31b-it:free,google/gemma-4-26b-a4b-it:free,x-ai/grok-4-fast:free"
+)
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
 
+let lastSuccessfulModel = MODEL_CANDIDATES[0];
+
+async function tryModel(model, messages, apiKey) {
+  const maxAttempts = 2;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
@@ -628,7 +633,7 @@ async function callRouter(messages) {
     });
 
     if (res.ok) {
-      return res.json();
+      return { ok: true, data: await res.json() };
     }
 
     const text = await res.text();
@@ -640,13 +645,32 @@ async function callRouter(messages) {
         const hinted = parsed?.error?.metadata?.retry_after_seconds;
         if (typeof hinted === "number") retrySeconds = hinted;
       } catch (e) {}
-      console.error(`OpenRouter 429, retrying in ${retrySeconds}s (attempt ${attempt}/${maxAttempts})`);
+      console.error(`${model} 429, retrying in ${retrySeconds}s (attempt ${attempt}/${maxAttempts})`);
       await new Promise((resolve) => setTimeout(resolve, retrySeconds * 1000));
       continue;
     }
 
-    throw new Error(`OpenRouter responded ${res.status}: ${text}`);
+    return { ok: false, status: res.status, text };
   }
+  return { ok: false, status: 429, text: "exhausted retries" };
+}
+
+async function callRouter(messages) {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) throw new Error("OPENROUTER_API_KEY is not set.");
+
+  const failures = [];
+  for (const model of MODEL_CANDIDATES) {
+    const result = await tryModel(model, messages, apiKey);
+    if (result.ok) {
+      lastSuccessfulModel = model;
+      return result.data;
+    }
+    console.error(`${model} failed (${result.status}): ${result.text}`);
+    failures.push(`${model}: ${result.status}`);
+  }
+
+  throw new Error(`All models failed - ${failures.join(", ")}`);
 }
 
 app.post("/api/agent-chat", async (req, res) => {
