@@ -45,6 +45,7 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  height: 100dvh;
 }
 
 .topbar {
@@ -386,7 +387,7 @@ body {
   position: fixed;
   top: 0;
   left: 0;
-  height: 100vh;
+  bottom: 0;
   width: 320px;
   max-width: 85vw;
   background: var(--panel);
@@ -395,6 +396,7 @@ body {
   transition: transform 0.25s ease;
   z-index: 50;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   padding: 20px;
   display: flex;
   flex-direction: column;
