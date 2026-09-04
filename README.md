@@ -40,6 +40,9 @@ Signal exposes that as a clean tool contract instead:
   `confirmed: true`, which the tool contract itself enforces server-side. A
   call without it is rejected with `412 confirmation_required`. This isn't
   prompt-engineered politeness — it's baked into the API.
+- `list_own_tools` — returns every tool currently available, with
+  descriptions. Meant to stop an agent from guessing or hallucinating a
+  tool name that doesn't exist, by just asking instead.
 
 That last point is the core of the pitch: the interface is the safety
 mechanism, not the agent's judgment.
