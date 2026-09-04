@@ -214,6 +214,83 @@ async function updateTaskStatus(id, status) {
   await loadTasks();
 }
 
+function escapeHtml(str) {
+  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function inlineFormat(str) {
+  return escapeHtml(str)
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/`([^`]+)`/g, "<code>$1</code>");
+}
+
+function renderMarkdown(text) {
+  const lines = text.split("\n");
+  let html = "";
+  let i = 0;
+  let paragraphBuffer = [];
+
+  function flushParagraph() {
+    if (paragraphBuffer.length) {
+      html += `<p>${paragraphBuffer.map(inlineFormat).join("<br>")}</p>`;
+      paragraphBuffer = [];
+    }
+  }
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    if (/^#{1,6}\s+/.test(line)) {
+      flushParagraph();
+      const content = line.replace(/^#{1,6}\s+/, "");
+      html += `<h4>${inlineFormat(content)}</h4>`;
+      i++;
+      continue;
+    }
+
+    if (/^\|.+\|$/.test(line.trim()) && lines[i + 1] && /^\|[\s:-]+\|$/.test(lines[i + 1].trim())) {
+      flushParagraph();
+      const headerCells = line.trim().slice(1, -1).split("|").map((c) => c.trim());
+      let rowIdx = i + 2;
+      const bodyRows = [];
+      while (rowIdx < lines.length && /^\|.+\|$/.test(lines[rowIdx].trim())) {
+        bodyRows.push(lines[rowIdx].trim().slice(1, -1).split("|").map((c) => c.trim()));
+        rowIdx++;
+      }
+      html +=
+        '<div class="msg-table-wrap"><table class="msg-table"><thead><tr>' +
+        headerCells.map((c) => `<th>${inlineFormat(c)}</th>`).join("") +
+        "</tr></thead><tbody>" +
+        bodyRows.map((r) => "<tr>" + r.map((c) => `<td>${inlineFormat(c)}</td>`).join("") + "</tr>").join("") +
+        "</tbody></table></div>";
+      i = rowIdx;
+      continue;
+    }
+
+    if (/^-\s+/.test(line)) {
+      flushParagraph();
+      const items = [];
+      while (i < lines.length && /^-\s+/.test(lines[i])) {
+        items.push(lines[i].replace(/^-\s+/, ""));
+        i++;
+      }
+      html += "<ul>" + items.map((it) => `<li>${inlineFormat(it)}</li>`).join("") + "</ul>";
+      continue;
+    }
+
+    if (line.trim() === "") {
+      flushParagraph();
+      i++;
+      continue;
+    }
+
+    paragraphBuffer.push(line);
+    i++;
+  }
+  flushParagraph();
+  return html || "<p></p>";
+}
+
 function appendAgentMessage({ text, variant, onApprove, onReject }) {
   const thread = document.getElementById("agent-thread");
   const isUser = variant === "user";
@@ -227,10 +304,14 @@ function appendAgentMessage({ text, variant, onApprove, onReject }) {
 
   const message = document.createElement("div");
   message.className = "agent-message" + (variant ? ` ${variant}` : "");
-  const p = document.createElement("p");
-  p.style.margin = "0";
-  p.textContent = text;
-  message.appendChild(p);
+  const body = document.createElement("div");
+  body.className = "msg-body";
+  if (isUser) {
+    body.textContent = text;
+  } else {
+    body.innerHTML = renderMarkdown(text);
+  }
+  message.appendChild(body);
 
   if (onApprove) {
     const actionRow = document.createElement("div");
