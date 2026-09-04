@@ -150,7 +150,7 @@ function findCompletionSignal(task) {
 }
 
 app.get("/api/model-info", (req, res) => {
-  const model = process.env.OPENROUTER_MODEL || "x-ai/grok-4-fast:free";
+  const model = process.env.OPENROUTER_MODEL || "z-ai/glm-5.2:free";
   res.json({ model, provider: "OpenRouter" });
 });
 
@@ -606,30 +606,47 @@ const TOOL_DEFS = [
 async function callRouter(messages) {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) throw new Error("OPENROUTER_API_KEY is not set.");
-  const model = process.env.OPENROUTER_MODEL || "x-ai/grok-4-fast:free";
+  const model = process.env.OPENROUTER_MODEL || "z-ai/glm-5.2:free";
+  const maxAttempts = 3;
 
-  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": "https://webmcp-wdd8.onrender.com",
-      "X-Title": "Signal Task Board"
-    },
-    body: JSON.stringify({
-      model,
-      messages,
-      tools: TOOL_DEFS,
-      tool_choice: "auto",
-      max_tokens: 600
-    })
-  });
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://webmcp-wdd8.onrender.com",
+        "X-Title": "Signal Task Board"
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        tools: TOOL_DEFS,
+        tool_choice: "auto",
+        max_tokens: 600
+      })
+    });
 
-  if (!res.ok) {
+    if (res.ok) {
+      return res.json();
+    }
+
     const text = await res.text();
+
+    if (res.status === 429 && attempt < maxAttempts) {
+      let retrySeconds = 3;
+      try {
+        const parsed = JSON.parse(text);
+        const hinted = parsed?.error?.metadata?.retry_after_seconds;
+        if (typeof hinted === "number") retrySeconds = hinted;
+      } catch (e) {}
+      console.error(`OpenRouter 429, retrying in ${retrySeconds}s (attempt ${attempt}/${maxAttempts})`);
+      await new Promise((resolve) => setTimeout(resolve, retrySeconds * 1000));
+      continue;
+    }
+
     throw new Error(`OpenRouter responded ${res.status}: ${text}`);
   }
-  return res.json();
 }
 
 app.post("/api/agent-chat", async (req, res) => {
